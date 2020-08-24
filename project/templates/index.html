@@ -1,0 +1,259 @@
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link href="https://cdn.bootcss.com/bootstrap/3.3.5/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcss.com/jquery/1.11.3/jquery.min.js"></script>
+    <script src="https://cdn.bootcss.com/bootstrap/3.3.5/js/bootstrap.min.js"></script>
+    <!--[if lt IE 9]>
+      <script src="https://cdn.bootcss.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+      <script src="https://cdn.bootcss.com/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <title>Reader</title>
+    <style>
+        body {
+            background-color: #eee;
+            transition: background-color .25s ease;
+            overflow-x: hidden;
+        }
+        body.dragged {
+            background-color: #ccf;
+        }
+        #container {
+            padding: 7em 1em 7em 1em;
+            font-family: '微软雅黑' !important;
+            margin: auto;
+            font-size: 18px;
+            width: calc(100% - 2em);
+            max-width: 800px; min-height: 100%;
+            background-color: white;
+            box-shadow: 0 0 25px rgba(0,0,0,.25);
+        }
+        .x-ray {
+            width: 50%; height: 4px;
+            background-color: #f77;
+            position: absolute;
+            transition: top .15s ease-in .5s;
+            z-index: -2;
+        }
+        #container>p {
+            min-height: 1em;
+        }
+        #light {
+            position: fixed;
+            left: 0; right: 0; top: 100%;
+            background-color: #ccc;
+            height: 4px;
+            margin-top: -2px;
+            z-index: -3;
+        }
+        #file-load {
+            display: inline-block;
+        }
+        #txt {
+            width: 100%;
+            height: 12em;
+            display: block;
+        }
+        #txtbtn {
+            position: fixed;
+            top: 10px; right: 10px;
+        }
+        #infobar {
+            font-family: Consolas, monospace;
+            position: fixed;
+            bottom: 10px; right: 15px;
+            text-align: right;
+        }
+        #txtbtn, #infobar {
+            z-index: 1;
+        }
+        #infobar>p {
+            margin: 0;
+        }
+        #infoswitch {
+            float: right;
+            background-color: transparent;
+            border: 0; padding: 10px;
+        }
+        .sub {
+            width: calc(20% - 4px);
+            display: inline-block;
+        }
+    </style>
+    <style id="js-style">
+        #container>p {
+            margin-bottom: 1em;
+        }
+    </style>
+    <script>
+        $(function() {
+            try {
+                navigator.getBattery().then(function(battery) {
+                    function update() {
+                        $('#battery-status').html(
+                            (battery.charging?'':('<span class="glyphicon glyphicon-flash"></span>'+parseInt(battery.level*10000)/100+'%'))
+                        );
+                    }
+                    battery.onchargingchange=battery.onlevelchange=update;
+                    update();
+                });
+            } catch(_) {}
+            function gettime() {
+                var time=new Date();
+                $('#timebar').text(
+                    (time.getHours()<10?('0'+time.getHours()):time.getHours())+':'+
+                    (time.getMinutes()<10?('0'+time.getMinutes()):time.getMinutes())
+                );
+            }
+            gettime();
+            setInterval(gettime,1000);
+            window.reading_prog=100;
+            window.drag_counter=0;
+            $(window)
+                .on('beforeunload',function() {
+                    if(reading_prog<98)
+                        return '离开此页后，当前的文本也将关闭';
+                })
+                .on('keydown',function(event) {
+                    if(event.keyCode===36 || event.keyCode===35) // home & end
+                        if($(document).height()>10*document.body.clientHeight && !confirm('注意：您按下了 '+event.key+' 键。'))
+                            event.preventDefault();
+                });
+            $('body')
+                .on('dragenter',function() {
+                    window.drag_counter++;
+                    $('body').addClass('dragged');
+                })
+                .on('dragleave',function() {
+                    if(--window.drag_counter==0)
+                        $('body').removeClass('dragged');
+                })
+                .on('dragover',function(event) {event.preventDefault();})
+                .on('drop',function(event) {
+                    event.preventDefault();
+                    window.drag_counter=0;
+                    $('body').removeClass('dragged');
+                    var fr=new FileReader();
+                    fr.onload=function() {
+                        load(fr.result);
+                    }
+                    fr.readAsText(event.originalEvent.dataTransfer.files[0]);
+                });
+        });
+        function load(override_txt_val) {
+            var lines=(override_txt_val||$('#txt').val()).split('\n'),
+                container=document.getElementById('container');
+            
+            $.ajax({
+                url:"/convert",
+                type:'post',
+                dataType : "json",
+                data:JSON.stringify({'name':$('#txt').val()}),
+                beforeSend:function(XMLHttpRequest){
+                  console.log('loading');
+                },
+                success:function(data,textStatus){
+                    $('#WAVFILE').html('<audio autoplay="autoplay"><source src="'+ data.file +'" type="audio/wav"/></audio>');
+                    console.log(data);
+                },
+            });
+
+
+            $(container)
+                .text('')
+                .css('font-size',$('#fontsize').val())
+                .css('color',$('#color').val())
+                .css('background-color',$('#bgcolor').val())
+                .css('max-width',$('#maxwidth').val());
+            $('#js-style')
+                .text('#container>p{margin-bottom:'+$('#margin').val()+';}');
+            
+            for(var pos=0;pos<lines.length;pos++) {
+                var elem=document.createElement('p');
+                elem.textContent=lines[pos];
+                container.appendChild(elem);
+            }
+            calc();
+            $('#myModal').modal('hide');
+        }
+        function loadfile(fil) {
+            var fr=new FileReader();
+            fr.onload=function() {
+                $('#txt').val(fr.result);
+            }
+            fr.readAsText(fil.files[0]);
+        }
+        function calc() {
+            window.reading_prog=(document.body.clientHeight+$(window).scrollTop())*100/$(document).height();
+            $('#prog').text(Math.ceil(reading_prog)+'%');
+            $('#light').css('top',reading_prog+'%');
+            $('#x-top').css('top',$(window).scrollTop());
+            $('#x-bottom').css('top',Math.min(document.body.clientHeight+$(window).scrollTop(),$(document).height()-4));
+        }
+        function infoswitch() {
+            $('#infobar>p').fadeToggle(200);
+        }
+    </script>
+</head>
+<body onscroll="calc()">
+    <button type="button" id="txtbtn" class="btn btn-default btn-sm" data-toggle="modal" data-target="#myModal">
+        <span class="glyphicon glyphicon-book hidden-xs"></span>
+        <span id="prog">加载</span>
+    </button>
+    
+    <div id="infobar">
+        <p><span id="battery-status"></span></p>
+        <p><span id="timebar">--:--</span></p>
+        <button type="button" id="infoswitch" onclick="infoswitch()"><span class="caret"></span></button>
+    </div>
+    
+    <div id="light"></div>
+    
+    <div id="container">
+        <p>点击右上角的按钮加载文本</p>
+    </div>
+    <div class="x-ray" id="x-top" style="margin-top: -4px;"></div>
+    <div class="x-ray" id="x-bottom"></div>
+
+    <div id="WAVFILE" style="display:none;"></div>
+
+    <div class="modal fade" id="myModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header">
+            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            <h4 class="modal-title">
+                加载文本&nbsp;
+                <input type="file" id="file-load" onchange="loadfile(this)">
+            </h4>
+        </div>
+        <div class="modal-body">
+            <textarea id="txt" class="form-control" placeholder="粘贴文本……"></textarea>
+            <br>
+            <div class="sub"><div class="input-group">
+                <span class="input-group-addon">字号</span>
+                <input type="text" id="fontsize" class="form-control" value="18px">
+            </div></div>
+            <div class="sub"><div class="input-group">
+                <span class="input-group-addon">段间距</span>
+                <input type="text" id="margin" class="form-control" value="0em">
+            </div></div>
+            <div class="sub"><div class="input-group">
+                <span class="input-group-addon">前景色</span>
+                <input type="text" id="color" class="form-control" value="black">
+            </div></div>
+            <div class="sub"><div class="input-group">
+                <span class="input-group-addon">背景色</span>
+                <input type="text" id="bgcolor" class="form-control" value="white">
+            </div></div>
+            <div class="sub"><div class="input-group">
+                <span class="input-group-addon">页宽</span>
+                <input type="text" id="maxwidth" class="form-control" value="800px">
+            </div></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-default" data-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" onclick="load()">加载</button>
+        </div>
+    </div></div></div>
+</body>
+</html>
